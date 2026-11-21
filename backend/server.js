@@ -25,7 +25,7 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '10kb' }));
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 60000,
-  max: 20,
+  max: 30,
   message: { error: 'Quá nhiều yêu cầu, vui lòng thử lại sau 1 phút.' }
 });
 app.use('/api/chat', limiter);
@@ -36,14 +36,20 @@ const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 // Đọc knowledge base
 function loadKnowledge() {
-  const knowledgeDir = path.join(__dirname, 'rag/knowledge');
-  const files = fs.readdirSync(knowledgeDir).filter(f => f.endsWith('.md'));
-  let context = '';
-  for (const file of files) {
-    const content = fs.readFileSync(path.join(knowledgeDir, file), 'utf-8');
-    context += `\n--- NGUỒN: ${file} ---\n${content}\n`;
+  try {
+    const knowledgeDir = path.join(__dirname, 'rag/knowledge');
+    if (!fs.existsSync(knowledgeDir)) return '';
+    const files = fs.readdirSync(knowledgeDir).filter(f => f.endsWith('.md'));
+    let context = '';
+    for (const file of files) {
+      const content = fs.readFileSync(path.join(knowledgeDir, file), 'utf-8');
+      context += `\n--- NGUỒN: ${file} ---\n${content}\n`;
+    }
+    return context;
+  } catch (err) {
+    console.error('Lỗi đọc knowledge base:', err.message);
+    return '';
   }
-  return context;
 }
 
 const knowledgeContext = loadKnowledge();
@@ -85,16 +91,17 @@ app.post('/api/chat', async (req, res) => {
   }
 
   try {
-    const systemPrompt = `Bạn là chatbot của STARTECH.
-CHỈ trả lời dựa trên thông tin trong ngữ cảnh dưới đây.
-Quy tắc:
-- Nếu không có thông tin: "Xin lỗi, tôi không có thông tin về vấn đề này. Vui lòng liên hệ hotline 028.1234.5678."
-- Không bịa thông tin.
+    const systemPrompt = `Bạn là trợ lý AI thông minh, linh hoạt và thân thiện của công ty công nghệ STARTECH.
 
-NGỮ CẢNH:
+Thông tin dữ liệu nội bộ STARTECH (Dùng để tham chiếu khi khách hỏi về sản phẩm, giá cả, dịch vụ, địa chỉ, chính sách STARTECH):
 ${knowledgeContext}
 
-CÂU HỎI: ${message}`;
+HƯỚNG DẪN TRẢ LỜI:
+1. Nếu câu hỏi liên quan đến STARTECH (sản phẩm, giá cả, chính sách bảo hành, địa chỉ chi nhánh, giờ làm việc...): Hãy ưu tiên sử dụng thông tin dữ liệu STARTECH ở trên.
+2. Nếu câu hỏi là thắc mắc chung về công nghệ, kỹ thuật máy tính, mạng hoặc trò chuyện tự do mọi chủ đề: Hãy tự do suy nghĩ và trả lời một cách thông minh, tự nhiên, chính xác bằng tiếng Việt.
+3. Giữ phong thái lịch sự, chuyên nghiệp, thân thiện.
+
+CÂU HỎI KHÁCH HÀNG: ${message}`;
 
     const result = await model.generateContent(systemPrompt);
     const response = await result.response;
@@ -103,7 +110,7 @@ CÂU HỎI: ${message}`;
     res.json({ answer, sources: ['startech-knowledge-base'] });
   } catch (err) {
     console.error('[Chatbot Error]:', err.message);
-    res.status(500).json({ error: 'Lỗi AI' });
+    res.status(500).json({ error: 'Lỗi AI: ' + err.message });
   }
 });
 
