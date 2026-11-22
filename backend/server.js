@@ -9,6 +9,7 @@ const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Middleware bảo mật
 app.use(helmet({
