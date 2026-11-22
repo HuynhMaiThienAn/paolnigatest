@@ -32,7 +32,8 @@ app.use('/api/chat', limiter);
 
 // Cấu hình Gemini
 const GEMINI_API_KEY = (process.env.GEMINI_API_KEY || '').trim();
-const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-3.8-flash').trim();
+const GEMINI_MODEL = (process.env.GEMINI_MODEL || 'gemini-flash-lite-latest').trim();
+const FALLBACK_MODELS = [...new Set([GEMINI_MODEL, 'gemini-3.5-flash-lite', 'gemini-flash-latest'])];
 const aiClient = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 if (!GEMINI_API_KEY) {
@@ -165,13 +166,31 @@ app.post('/api/chat', async (req, res) => {
       { role: 'user', parts: [{ text: trimmedMessage }] }
     ];
 
-    const response = await aiClient.models.generateContent({
-      model: GEMINI_MODEL,
-      contents,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION
+    let response = null;
+    let lastError = null;
+    for (const modelName of FALLBACK_MODELS) {
+      try {
+        response = await aiClient.models.generateContent({
+          model: modelName,
+          contents,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION
+          }
+        });
+        break;
+      } catch (modelErr) {
+        lastError = modelErr;
+        const code = modelErr.status;
+        if (code !== 404 && code !== 503 && code !== 429) {
+          throw modelErr;
+        }
+        console.warn(`[Chatbot Fallback] ${modelName} failed (${code}), trying next model...`);
       }
-    });
+    }
+
+    if (!response) {
+      throw lastError || new Error('Tất cả model AI đều đang bận');
+    }
 
     const answer = response.text || 'Xin lỗi, tôi không thể tạo câu trả lời lúc này.';
     appendSessionHistory(sessionId, trimmedMessage, answer);
@@ -180,7 +199,7 @@ app.post('/api/chat', async (req, res) => {
   } catch (err) {
     console.error('[Chatbot Error]:', err.message);
     const status = err.status && err.status >= 400 && err.status < 600 ? err.status : 500;
-    res.status(status).json({ error: 'Lỗi AI: ' + err.message });
+    res.status(status).json({ error: 'Hệ thống AI đang quá tải hoặc gặp sự cố tạm thời. Vui lòng thử lại sau.' });
   }
 });
 
