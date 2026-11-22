@@ -1,7 +1,6 @@
 /**
  * STARTECH Chatbot Widget
  * Nhúng vào mọi trang website, giao tiếp với backend qua API
- * Dữ liệu không bao giờ rời khỏi mạng nội bộ (Ollama chạy local)
  */
 (function() {
   'use strict';
@@ -75,7 +74,7 @@
                 </svg>
               </button>
             </div>
-            <p class="chat-disclaimer">Chatbot AI chạy nội bộ, dữ liệu không rời khỏi mạng doanh nghiệp.</p>
+            <p class="chat-disclaimer">Trợ lý AI hỗ trợ tư vấn 24/7. Vui lòng không chia sẻ thông tin nhạy cảm.</p>
           </div>
         </div>
       </div>
@@ -153,17 +152,24 @@
           })
         });
 
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
         hideTyping(typingId);
+
+        if (!response.ok) {
+          const errMsg = data.error || 'Đã xảy ra lỗi khi xử lý yêu cầu. Vui lòng thử lại sau.';
+          appendMessage(errMsg, 'bot', true);
+          return;
+        }
 
         if (data.blocked) {
           appendMessage(data.answer, 'bot', true);
-        } else {
+        } else if (data.answer) {
           appendMessage(data.answer, 'bot');
-          // Có thể hiển thị sources nếu muốn
           if (data.sources && data.sources.length > 0) {
             console.log('[Chatbot] Sources:', data.sources);
           }
+        } else {
+          appendMessage('Xin lỗi, tôi không nhận được phản hồi hợp lệ từ máy chủ.', 'bot', true);
         }
       } catch (err) {
         hideTyping(typingId);
